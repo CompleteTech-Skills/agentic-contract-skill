@@ -51,6 +51,16 @@ Use this skill when approved business terms need to become a structured agreemen
 | Optionally render an addressed envelope. | Issue invoices, approve delivery, or send documents. |
 | Keep unknown facts as `TBD`. | Convert unapproved proposal terms into commitments. |
 
+### Sending for Signature
+
+Generating a contract package is permitted as a draft. Before sending it for signature, require the `legal_or_contract` and `recipient_or_external_send` approvals in the orchestrator's `project_state`, with an `approved_by` approver and ISO `approved_at` date for each approval. The recipient gate uses the `external_send` approval record. When the orchestrator is installed, run the following from its root and require a passing result before sending:
+
+```bash
+python3 scripts/validate_state.py <state> --action send_contract
+```
+
+Replace `<state>` with the engagement's `project_state` file. This is a check the agent runs, not a runtime guard. A passing check does not send or sign the contract; this skill only generates draft artifacts.
+
 ## Resource Guide
 
 | Resource | Role |
