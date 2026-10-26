@@ -92,6 +92,27 @@ def read_config(paths: Sequence[str | Path]) -> configparser.ConfigParser:
     return config
 
 
+def paths_alias(first: Path, second: Path) -> bool:
+    if first.resolve() == second.resolve():
+        return True
+    try:
+        return first.samefile(second)
+    except FileNotFoundError:
+        return False
+
+
+def validate_output_paths(outputs: Dict[str, Path], inputs: Sequence[Path]) -> None:
+    checked_outputs: Dict[str, Path] = {}
+    for name, output in outputs.items():
+        for other_name, other_output in checked_outputs.items():
+            if paths_alias(output, other_output):
+                raise ValueError(f"{name} output aliases {other_name} output: {output}")
+        for input_path in inputs:
+            if paths_alias(output, input_path):
+                raise ValueError(f"{name} output would overwrite input file: {input_path}")
+        checked_outputs[name] = output
+
+
 def section_dict(config: configparser.ConfigParser, section: str) -> Dict[str, str]:
     if not config.has_section(section):
         return {}
@@ -966,12 +987,18 @@ def build_envelope_pdf(context: Dict[str, Dict[str, str]], out_path: Path) -> No
 
 def main() -> int:
     args = parse_args()
-    config = read_config(args.config)
+    config_paths = [resolve_path(path) for path in args.config]
+    config = read_config(config_paths)
     context = build_context(config)
     template_path = resolve_path(args.template)
     out_path = resolve_path(args.out)
     markdown_out = resolve_path(args.markdown_out) if args.markdown_out else out_path.with_suffix(".md")
-    envelope_out = resolve_path(args.envelope_out) if args.envelope_out else out_path.with_name("addressed_envelope.pdf")
+    outputs = {"Contract PDF": out_path, "Markdown": markdown_out}
+    envelope_out = None
+    if get_bool(context["branding"], "envelope_enabled", True) and not args.no_envelope:
+        envelope_out = resolve_path(args.envelope_out) if args.envelope_out else out_path.with_name("addressed_envelope.pdf")
+        outputs["Envelope PDF"] = envelope_out
+    validate_output_paths(outputs, [*config_paths, template_path])
 
     markdown = render_markdown(template_path, context)
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -979,8 +1006,7 @@ def main() -> int:
     markdown_out.write_text(markdown, encoding="utf-8")
     build_pdf(markdown, context, out_path, include_cover=not args.no_cover)
 
-    envelope_enabled = get_bool(context["branding"], "envelope_enabled", True)
-    if envelope_enabled and not args.no_envelope:
+    if envelope_out is not None:
         envelope_out.parent.mkdir(parents=True, exist_ok=True)
         build_envelope_pdf(context, envelope_out)
         print(f"Envelope PDF: {envelope_out}")
